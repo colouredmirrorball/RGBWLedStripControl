@@ -239,6 +239,8 @@ void loop()
 
         break;
 
+        //Add your own effects here!
+
       default:
         showColor(0, 0, 0, 0);
         break;
