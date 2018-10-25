@@ -313,8 +313,12 @@ void serialEvent()
       counter = 0;
     }
 
+    //primitive checksum: just add all values together
+    unsigned char checksum = checkM + command + value + data1 + data2 + data3 + data4;
+
     //Great succes! Me like!
     Serial.write('a');
+    Serial.write(checksum & 0xff);
   }
 }
 
