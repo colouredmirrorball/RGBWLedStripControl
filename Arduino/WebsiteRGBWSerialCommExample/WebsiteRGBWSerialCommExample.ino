@@ -303,7 +303,7 @@ void serialEvent()
     //Eight byte: checksum value
     unsigned char checkSum = Serial.read() & 0xff;
     
-    //primitive checksum: just add all values together
+    //primitive checksum: just add all values together, and let it overflow at will
     unsigned char check = checkM + command + value + data1 + data2 + data3 + data4;
 
     //If checksum is not correct, something went wrong!

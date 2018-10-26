@@ -54,19 +54,38 @@ void draw()
       //Quit idle mode when a network message has been received
       idle = false;
 
-      //Parse the message
-      byte strip = (byte) (c.read() & 0xff);  //com port idx
-      byte command = (byte) (c.read() & 0xff);
-      byte value = (byte) (c.read() & 0xff);
-      byte data1 = (byte) (c.read() & 0xff);
-      byte data2 = (byte) (c.read() & 0xff);
-      byte data3 = (byte) (c.read() & 0xff);
-      byte data4 = (byte) (c.read() & 0xff);
+      String message = c.readStringUntil('\n');
 
-      setMessage(strip, (char)command, value, color(data1, data2, data3, data4));
+      if (message.equals("strip command"))
+      {
 
-      //Reply with "S" for success
-      c.write("S");
+        //Parse the message
+        byte strip = (byte) (c.read() & 0xff);  //com port idx
+        byte command = (byte) (c.read() & 0xff);
+        byte value = (byte) (c.read() & 0xff);
+        byte data1 = (byte) (c.read() & 0xff);
+        byte data2 = (byte) (c.read() & 0xff);
+        byte data3 = (byte) (c.read() & 0xff);
+        byte data4 = (byte) (c.read() & 0xff);
+
+        setMessage(strip, (char)command, value, color(data1, data2, data3, data4));
+
+        //Reply with "S" for success
+        c.write("S");
+      }
+      else if(message.equals("reset"))
+      {
+        resetStrips();
+        c.write("strips reset");
+      }
+      else if(message.equals("status"))
+      {
+        c.write("Connected strips: " + ledStrips.size() + " - ");
+        for(LedStrip strip : ledStrips)
+        {
+          c.write(strip.portName);
+        }
+      }
 
       while (c.available() > 0) c.read(); //flush
     }
@@ -82,13 +101,19 @@ void draw()
 }
 
 
+void keyPressed()
+{
+  if (key == 'r') resetStrips();
+}
+
+
 //Rescan for connected Arduinos
 void resetStrips()
 {
   //Get rid of all current communication
   for (LedStrip strip : ledStrips)
   {
-    strip.listener.dispose();
+    if (strip.listener != null) strip.listener.dispose();
   }
 
   //Get rid of the ones we already have
@@ -134,27 +159,42 @@ void setMessage(int strip, char command, byte value, color c)
   }
 }
 
+void mentionStripDisconnect(String portName)
+{
+  println("Port", portName, "disconnected!");
+}
+
 //Class containing all information belonging to a particular Arduino
 class LedStrip
 {
   String portName;
   StripListener listener;
 
+
   public LedStrip(PApplet parent, String portName, int baudrate)
   {
     this.portName = portName;
-
-    //Make a new StripListener and start its thread
-    Serial serial = new Serial(parent, portName, baudrate);
-    listener = new StripListener(serial, portName);
-    (new Thread(listener)).start();
+    try
+    {
+      //Make a new StripListener and start its thread
+      Serial serial = new Serial(parent, portName, baudrate);
+      listener = new StripListener(serial, portName);
+      listener.connected = true;
+      (new Thread(listener)).start();
+    }
+    catch(Exception e)
+    {
+      if (listener != null) listener.connected = false;
+      println("Error occurred while trying to establish connection on port", portName);
+      e.printStackTrace();
+    }
 
     println("Made new strip with name", portName);
   }
 
   public void setMessage(StripMessage message)
   {
-    listener.setMessage(message);
+    if (listener != null)listener.setMessage(message);
   }
 }
 
@@ -205,6 +245,21 @@ class StripListener implements Runnable
   //If set to true, the message will be communicated to the Arduino as soon as allowed
   boolean sendMessage = false;
 
+  //Timer variable to allow timeout detection
+  float prevMessageTime = millis();
+
+  //Time to wait for response until timeout occurs, in ms
+  float timeoutTime = 50;
+
+  //Should the listener check for timeouts?
+  boolean checkForTimeout = false;
+
+  //If there are a lot of timeouts in a row, the Arduino is probably disconnected
+  int retries = 0;
+
+  //if timeouts occur, connected will turn false again
+  boolean connected = false;
+
   StripListener(Serial serial, String portName)
   {
     this.serial = serial;
@@ -244,19 +299,46 @@ class StripListener implements Runnable
             success = checksum((byte) (checksum & 0xff));
             if (!success)
             {
-              println("Checksum failed! Resending message...");
+              //println("Checksum failed! Resending message...");
             }
           }
 
           //Send message again if an error occurred
           if (!success) sendMessage = true;
+          //If successful, don't check for timeouts & reset timeout counter
+          else 
+          {
+            checkForTimeout = false;
+            retries = 0;
+          }
         }
 
         //If allowed, send the message
         if (!halt && sendMessage)
         {
           sendMessage = false;
+          checkForTimeout = true;
+          //Reset the timer
+          prevMessageTime = millis();
           sendDataToStrip();
+        }
+
+        if (checkForTimeout)
+        {
+          if (millis() > prevMessageTime + timeoutTime)
+          {
+            //Resend message
+            sendMessage = true;
+            retries++;
+          }
+          if (retries > 20) 
+          {
+            connected = false;
+            mentionStripDisconnect(portName);
+
+            //Suspend the thread
+            running = false;
+          }
         }
       }
     }
@@ -265,6 +347,8 @@ class StripListener implements Runnable
   public void sendDataToStrip()
   {
 
+
+    //Write the message to the Arduino
     if (messageByte != null)
     {
       serial.write(messageByte);
