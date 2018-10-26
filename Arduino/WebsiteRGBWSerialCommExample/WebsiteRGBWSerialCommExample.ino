@@ -265,7 +265,7 @@ void loop()
 void serialEvent()
 {
   //Discard messages that are too short
-  if (Serial.available() > 6)
+  if (Serial.available() > 7)
   {
     
     //Start parsing the incoming message
@@ -294,11 +294,30 @@ void serialEvent()
     //Third byte: value - strobo frequency, rainbow scroll speed, etc.
     value = Serial.read() & 0xff;
 
-    //Fourth - last bytes: data (mainly RGBW values)
+    //Fourth - seventh bytes: data (mainly RGBW values)
     data1 = Serial.read() & 0xff;
     data2 = Serial.read() & 0xff;
     data3 = Serial.read() & 0xff;
     data4 = Serial.read() & 0xff;
+
+    //Eight byte: checksum value
+    unsigned char checkSum = Serial.read() & 0xff;
+    
+    //primitive checksum: just add all values together
+    unsigned char check = checkM + command + value + data1 + data2 + data3 + data4;
+
+    //If checksum is not correct, something went wrong!
+    if(check != checkSum)
+    {
+      //Let the computer know
+      Serial.write('e');
+      Serial.write(check);
+      Serial.flush();
+
+      //If there is anything left in the Serial buffer, we're no longer interested in it
+      while (Serial.available() > 0) Serial.read(); 
+      return;
+    }
 
     //There really shouldn't be anything left
     while (Serial.available()) Serial.read(); //flush
@@ -315,12 +334,11 @@ void serialEvent()
       counter = 0;
     }
 
-    //primitive checksum: just add all values together
-    unsigned char checksum = checkM + command + value + data1 + data2 + data3 + data4;
+    
 
     //Great succes! Me like!
     Serial.write('a');
-    Serial.write(checksum & 0xff);
+    Serial.write(check & 0xff);
   }
 }
 
