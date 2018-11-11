@@ -16,3 +16,8 @@ This is detailed in my blog post, including a description of the required hardwa
   * Find the IP address of all the remote devices and fill it in in the master control sketch (click the left "+" button for every strip)
   
   How to use is described in the blog post linked above.
+  
+  ## Adapting for WS2812
+  
+  The easiest way to adapt this framework to regular WS2812 RGB strips is to comment out line 149 in the Arduino sketch: https://github.com/colouredmirrorball/RGBWLedStripControl/blob/master/Arduino/WebsiteRGBWSerialCommExample/WebsiteRGBWSerialCommExample.ino#L149
+  This will make the sketch only send RGB values, even though it receives RGBW.
