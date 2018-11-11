@@ -4,9 +4,9 @@ import processing.serial.*;
 ArrayList<LedStrip> ledStrips = new ArrayList();
 
 Server server;
+color bg = color(0);
 
-
-
+ 
 void setup()
 {
   size(400, 255);
@@ -35,14 +35,14 @@ void draw()
     colorMode(HSB);
     hue += 0.1;
     if (hue > 255) hue = 0;
-    color c = color(hue, 255, 255, 0);
-    background(c);
+    bg = color(hue, 255, 255, 0);
+
 
     colorMode(RGB);
 
     for (int i = 0; i < ledStrips.size(); i++)
     {
-      setMessage(i, 'c', (byte) 25, c);
+      setMessage(i, 'c', (byte) 25, bg);
     }
   }
 
@@ -53,10 +53,12 @@ void draw()
     {
       //Quit idle mode when a network message has been received
       idle = false;
+      byte[] incomingMessage = c.readBytesUntil('\n');
 
-      String message = c.readStringUntil('\n');
+      String message = new String(incomingMessage);
 
-      if (message.equals("strip command"))
+
+      if (message.equals("strip command\n"))
       {
 
         //Parse the message
@@ -68,23 +70,26 @@ void draw()
         byte data3 = (byte) (c.read() & 0xff);
         byte data4 = (byte) (c.read() & 0xff);
 
-        setMessage(strip, (char)command, value, color(data1, data2, data3, data4));
+        bg = color(data1 & 0xff, data2 & 0xff, data3 & 0xff);
+
+
+        setMessage(strip, (char)command, value, color(data1 & 0xff, data2 & 0xff, data3 & 0xff, data4 & 0xff));
 
         //Reply with "S" for success
         c.write("S");
-      }
-      else if(message.equals("reset"))
+      } else if (message.equals("reset\n"))
       {
         resetStrips();
         c.write("strips reset");
-      }
-      else if(message.equals("status"))
+      } else if (message.equals("status\n"))
       {
-        c.write("Connected strips: " + ledStrips.size() + " - ");
-        for(LedStrip strip : ledStrips)
+        String reply = "Connected strips: " + ledStrips.size() + " - ";
+
+        for (LedStrip strip : ledStrips)
         {
-          c.write(strip.portName);
+          reply += strip.portName + " ";
         }
+        c.write(reply);
       }
 
       while (c.available() > 0) c.read(); //flush
@@ -98,6 +103,7 @@ void draw()
     //If possible, reply with "F" for failure
     if (c != null) c.write("F");
   }
+  background(bg);
 }
 
 
@@ -162,6 +168,11 @@ void setMessage(int strip, char command, byte value, color c)
 void mentionStripDisconnect(String portName)
 {
   println("Port", portName, "disconnected!");
+  for (int i = ledStrips.size()-1; i >= 0; i--)
+  {
+    LedStrip strip = ledStrips.get(i);
+    if (strip.portName.equals(portName)) ledStrips.remove(i);
+  }
 }
 
 //Class containing all information belonging to a particular Arduino
@@ -249,7 +260,7 @@ class StripListener implements Runnable
   float prevMessageTime = millis();
 
   //Time to wait for response until timeout occurs, in ms
-  float timeoutTime = 50;
+  float timeoutTime = 100;
 
   //Should the listener check for timeouts?
   boolean checkForTimeout = false;
@@ -331,7 +342,7 @@ class StripListener implements Runnable
             sendMessage = true;
             retries++;
           }
-          if (retries > 20) 
+          if (retries > 50) 
           {
             connected = false;
             mentionStripDisconnect(portName);
